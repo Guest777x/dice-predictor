@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4 Dice Color Predictor</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#141c31;--line:#293653;--muted:#a9b5ce;--text:#f5f7ff;--accent:#8b7cff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#1a2450 0,#0b1020 55%);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;padding:28px 16px}
+main{max-width:1000px;margin:auto}h1{font-size:clamp(28px,5vw,42px);margin:0 0 6px}p{color:var(--muted);margin:6px 0 18px}.sub{font-size:14px}
+.panel{background:rgba(20,28,49,.94);border:1px solid var(--line);border-radius:18px;padding:20px;margin:16px 0;box-shadow:0 14px 40px #0003}
+h2{font-size:19px;margin:0 0 12px}.dice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.die{border:1px solid var(--line);border-radius:14px;padding:14px;background:#0e1629}.die h3{margin:0 0 10px;font-size:16px}
+.rolls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.roll label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+select{width:100%;background:#0a1121;color:var(--text);border:1px solid #3a496b;border-radius:9px;padding:10px 5px;font:inherit;min-width:0}
+button{border:0;border-radius:11px;padding:12px 17px;font:700 14px system-ui;cursor:pointer}
+.primary{background:linear-gradient(100deg,#7767ff,#a16bff);color:white}.secondary{background:#263451;color:white;border:1px solid #405174}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:15px}
+.color-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.result{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.stat{background:#0d1528;border:1px solid var(--line);border-radius:13px;padding:14px}.stat small{color:var(--muted);display:block}.big{font-size:27px;font-weight:800}
+.recommend{border:1px solid #6256ba;background:#191d3c;border-radius:14px;padding:16px;margin-top:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}
+.note{font-size:13px;color:#b9c4da;background:#10192c;border-left:3px solid #8b7cff;padding:12px;border-radius:8px;margin-top:14px}
+@media(max-width:650px){.dice-grid,.result{grid-template-columns:1fr}.panel{padding:15px}.rolls{gap:5px}select{font-size:13px;padding:9px 2px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>🎲 4 Dice Color Predictor</h1>
+  <p class="sub">Enter the last four results for each die. The tool estimates which chosen color is most likely to appear exactly once across all four dice.</p>
+
+  <section class="panel">
+    <h2>1. Enter the last 4 rolls for each die</h2>
+    <div id="diceGrid" class="dice-grid"></div>
+    <div class="actions">
+      <button class="primary" id="analyze">Analyze & predict</button>
+      <button class="secondary" id="reset">Reset history</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Choose the color you want to win with</h2>
+    <p class="sub">Winning condition: your chosen color appears exactly once among the four dice.</p>
+    <select id="chosen"></select>
+  </section>
+
+  <section class="panel" id="output" aria-live="polite">
+    <h2>3. Prediction</h2>
+    <p>Enter the 16 previous results, then select <b>Analyze & predict</b>.</p>
+  </section>
+
+  <p class="note"><b>Important:</b> This is a statistical estimate, not a guaranteed predictor. Four past results per die are a very small sample. If the dice are fair and independent, past rolls do not reveal the next roll. The tool uses smoothed frequencies so a color missing from the short history is not treated as impossible. Its confidence is not a proven accuracy rate.</p>
+</main>
+<script>
+const colors=[
+ {name:"Red",hex:"#f04452"},{name:"Blue",hex:"#438cff"},{name:"Green",hex:"#31c978"},
+ {name:"Yellow",hex:"#f3cb45"},{name:"Purple",hex:"#a879ff"},{name:"Orange",hex:"#ff963d"}
+];
+const grid=document.getElementById("diceGrid");
+const chosen=document.getElementById("chosen");
+function options(){return '<option value="">Choose color</option>'+colors.map(c=>`<option value="${c.name}">${c.name}</option>`).join("")}
+for(let d=0;d<4;d++){
+ const card=document.createElement("div");card.className="die";
+ card.innerHTML=`<h3>Die ${d+1}</h3><div class="rolls">${[0,1,2,3].map(r=>`<div class="roll"><label>Roll ${r+1}</label><select id="d${d}r${r}">${options()}</select></div>`).join("")}</div>`;
+ grid.appendChild(card);
+}
+chosen.innerHTML=colors.map(c=>`<option value="${c.name}">${c.name}</option>`).join("");
+chosen.value="Red";
+
+function getHistory(){
+ const hist=[];
+ for(let d=0;d<4;d++){
+  const rolls=[];
+  for(let r=0;r<4;r++){const v=document.getElementById(`d${d}r${r}`).value;if(!v)return null;rolls.push(v)}
+  hist.push(rolls);
+ }
+ return hist;
+}
+function estimates(hist){
+ // Laplace smoothing: add one pseudo-count for each of the six colors.
+ return hist.map(rolls=>{
+  const counts=Object.fromEntries(colors.map(c=>[c.name,0]));
+  rolls.forEach(x=>counts[x]++);
+  const probs={};colors.forEach(c=>probs[c.name]=(counts[c.name]+1)/10);
+  return {counts,probs};
+ });
+}
+function exactlyOnce(probs,color){
+ // Probability that exactly one of four independent dice shows this color.
+ let dp=[1,0,0,0,0];
+ for(const p of probs){const next=[0,0,0,0,0];for(let k=0;k<=4;k++){next[k]+=dp[k]*(1-p);if(k<4)next[k+1]+=dp[k]*p}dp=next}
+ return dp[1];
+}
+function pct(x){return (x*100).toFixed(2)+"%"}
+function analyze(){
+ const hist=getHistory(),out=document.getElementById("output");
+ if(!hist){out.innerHTML='<h2>3. Prediction</h2><p style="color:#ffbd69">Please choose a color for all 16 history slots first.</p>';return}
+ const est=estimates(hist),selected=chosen.value;
+ const selectedProbs=est.map(e=>e.probs[selected]);
+ const selectedWin=exactlyOnce(selectedProbs,selected);
+ const rows=colors.map(c=>{
+  const ps=est.map(e=>e.probs[c.name]);
+  return {name:c.name,prob:exactlyOnce(ps,c.name),ps};
+ }).sort((a,b)=>b.prob-a.prob);
+ const best=rows[0];
+ const rowsHtml=rows.map(r=>`<tr><td><span class="color-dot" style="background:${colors.find(c=>c.name===r.name).hex}"></span>${r.name}</td><td>${pct(r.prob)}</td><td>${r.ps.map(pct).join(" · ")}</td></tr>`).join("");
+ const perDie=est.map((e,i)=>`<tr><td>Die ${i+1}</td>${colors.map(c=>`<td>${e.counts[c.name]}</td>`).join("")}</tr>`).join("");
+ out.innerHTML=`<h2>3. Prediction</h2>
+ <div class="result">
+  <div class="stat"><small>Your selected color: ${selected}</small><div class="big">${pct(selectedWin)}</div><small>Estimated chance it appears exactly once</small></div>
+  <div class="stat"><small>Highest estimate from this history</small><div class="big">${best.name} · ${pct(best.prob)}</div><small>Not a guarantee or verified 80% prediction</small></div>
+ </div>
+ <div class="recommend"><b>${best.name===selected?"Your selected color has":"The highest estimated color is"} ${best.name}.</b><br><span style="color:#c4cbe0">Based only on the four entered observations for each die. Choose ${best.name} only if you want to follow the model's highest estimate.</span></div>
+ <h2 style="margin-top:20px">Estimated chance of exactly one match</h2>
+ <div style="overflow-x:auto"><table><thead><tr><th>Color</th><th>Exactly once</th><th>Estimated chance per die (1–4)</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+ <h2 style="margin-top:20px">Counts in your history</h2>
+ <div style="overflow-x:auto"><table><thead><tr><th>Die</th>${colors.map(c=>`<th>${c.name}</th>`).join("")}</tr></thead><tbody>${perDie}</tbody></table></div>
+ <p class="note">Method: each die's probability estimate uses (number of times the color appeared + 1) ÷ 10. The four die estimates are then combined assuming independent dice. This smoothing avoids treating a color as impossible after only four observations. Real future results can differ substantially.</p>`;
+}
+document.getElementById("analyze").addEventListener("click",analyze);
+document.getElementById("reset").addEventListener("click",()=>{
+ document.querySelectorAll("#diceGrid select").forEach(s=>s.value="");
+ document.getElementById("output").innerHTML="<h2>3. Prediction</h2><p>History reset. Enter all 16 results to analyze.</p>";
+});
+</script>
+</body>
+</html>
